@@ -28,11 +28,11 @@ int main(){
 
 
     char recvBuf[1024] = {0};
-    char* data = "this is client/n";
-
+    char* data = "this is client\n";
+    int i = 0;
     while(1){
-        write(sockfd, data, strlen(data));
-        sleep(1);
+        sprintf(recvBuf, "data: %d\n", i++);
+        write(sockfd, recvBuf, strlen(recvBuf));
 
         int len = read(sockfd, recvBuf, sizeof(recvBuf));
         if(len == -1){
@@ -46,6 +46,7 @@ int main(){
             printf("server closed...");
             break;
         }
+        sleep(1);
     }
     
 
