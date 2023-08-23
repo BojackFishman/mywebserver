@@ -49,7 +49,7 @@ int main(){
     // int nfds = 0;
 
     // 创建一个epoll实例
-    int epfd = epoll_creat(100);
+    int epfd = epoll_create(100);
     // 将监听socket fd加入epoll实例中
     struct epoll_event epev;
     epev.events = POLLIN;
@@ -62,7 +62,7 @@ int main(){
 
         // 调用poll()检测文件描述符数据
         // ret = poll(fds, nfds + 1, -1);
-        ret = epoll_wait(epfd, &epevs, 1024, -1);
+        ret = epoll_wait(epfd, epevs, 1024, -1);
         if(ret == -1){
             perror("epll_wait");
             exit(-1);
