@@ -5,36 +5,59 @@
 #include<unistd.h>
 #include<string.h>
 #include<stdlib.h>
-#include<signal.h>
-#include<sys/wait.h>
 #include<errno.h>
+#include<pthread.h>
 
-void recycleChild(int arg){
+
+struct sockInfo
+{
+    int sockfd;
+    struct sockaddr_in addr;
+    pthread_t tid;
+};
+
+// 存储传入线程的参数数据。如果定义为局部变量一层循环结束就会销毁。并且要支持可能的并发访问。
+// 线程的栈空间资源不共享，管理堆空间或许又比较复杂；教程说的，真的复杂吗？
+struct sockInfo sockinfos[128];
+
+// 子线程与客户端通信
+void* working(void* arg){
+    struct sockInfo* pinfo = (struct sockInfo*)arg;
+
+    // 输出客户端信息
+    char clienIP[16];
+    inet_ntop(AF_INET, &pinfo->addr.sin_addr.s_addr, clienIP, sizeof(clienIP));
+    unsigned short clientPort = ntohs(pinfo->addr.sin_port);
+    printf("client ip : %s, port : %d\n", clienIP, clientPort);
+
+    char recvBuf[1024] = {0};
+    char* data = "this is server\n";
+
+    // 获取客户端数据
     while(1){
-        int ret = waitpid(-1, NULL, WNOHANG);
-        if(ret == -1) {
-            // 所有子进程回收了
+        // printf("%d\n", pinfo->sockfd);
+        int len = read(pinfo->sockfd, &recvBuf, sizeof(recvBuf));
+        if(len == -1){
+            perror("read");
+            exit(-1);
+        }
+        else if(len > 0){
+            printf("recv client data: %s \n", recvBuf);
+        }
+        else if(len == 0){
+            printf("client closed...\n");
             break;
         }
-        else if(ret == 0){
-            // 还有子进程活着
-            break;
-        }
-        else if(ret > 0){
-            printf("子进程 %d 被回收了\n", ret);
-        }
+
+        write(pinfo->sockfd, recvBuf, strlen(recvBuf)+1);
     }
+    close(pinfo->sockfd);
+
+    // 不同。关闭传入数据槽的占用
+    pinfo->sockfd = -1;
 }
 
 int main(){
-
-    struct sigaction act;
-    act.sa_flags = 0;
-    sigemptyset(&act.sa_mask);
-    act.sa_handler = recycleChild;
-
-    // 注册信号捕捉， 回收子进程
-    sigaction(SIGCHLD, &act, NULL);
 
     int httpd = 0;
 
@@ -65,6 +88,14 @@ int main(){
         exit(-1);
     }
 
+    // 初始化线程传入参数
+    int arr_len = sizeof(sockinfos)/sizeof(sockinfos[0]);
+    memset(&sockinfos, 0, sizeof(sockinfos));
+    for(int i = 0; i < arr_len; ++i){
+        sockinfos[i].sockfd = -1;
+        sockinfos[i].tid = -1;
+    }
+
     // 接收客户端连接
     // 循环等待客户端连接
     while(1){
@@ -80,45 +111,28 @@ int main(){
             exit(-1);
         }
 
-        // 每一个连接进来，创建一个子进程跟客户端通信
-        int pid = fork();
-        if(pid == 0){
-
-            // 子进程关闭监听socket
-            close(httpd);
-
-            // 输出客户端信息
-            char clienIP[16];
-            inet_ntop(AF_INET, &clientaddr.sin_addr.s_addr, clienIP, sizeof(clienIP));
-            unsigned short clientPort = ntohs(clientaddr.sin_port);
-            printf("client ip : %s, port : %d\n", clienIP, clientPort);
-
-            char recvBuf[1024] = {0};
-            char* data = "this is server\n";
-
-            // 获取客户端数据
-            while(1){
-                int len = read(clientfd, recvBuf, sizeof(recvBuf));
-                if(len == -1){
-                    perror("read");
-                    exit(-1);
-                }
-                else if(len > 0){
-                    printf("recv client data: %s \n", recvBuf);
-                }
-                else if(len == 0){
-                    printf("client closed...");
-                    break;
-                }
-
-                write(clientfd, recvBuf, strlen(recvBuf));
+        // 每一个连接进来，创建一个子线程跟客户端通信
+        struct sockInfo *pinfo;
+        for(int i = 0; i < arr_len; ++i){
+            // 分配一个可用的槽
+            if(sockinfos[i].sockfd == -1){
+                pinfo = &sockinfos[i];
+                break;
             }
-            close(clientfd);
-            exit(0);        // 这一行很重要否则子进程是不会退出的，会继续循环等待
+            if(i == arr_len-1){
+                sleep(1);
+                i = -1;
+            }
         }
+        pinfo->sockfd = clientfd;
+        pinfo->addr = clientaddr;
+        // memcmp(&pinfo->addr, &clientaddr, client_addr_len);
 
-        // 主进程关闭通信socket fd.  否则主进程产生的socket fd会越来越多。
-        close(clientfd);
+        pthread_create(&pinfo->tid, NULL, working, pinfo);
+
+        pthread_detach(pinfo->tid);
+
+        // close(clientfd);
     }
 
     // 关闭文件描述符
