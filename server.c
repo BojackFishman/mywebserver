@@ -58,7 +58,7 @@ int main(){
             continue;
         }else if(ret > 0){
             // 检测到了有文件描述符对应缓冲区数据发生了改变
-            if(fd[0].revents & POOLIN){
+            if(fds[0].revents & POLLIN){
                 // httpd有数据，有新的客户端连接进来
                 struct sockaddr_in clientaddr;
                 socklen_t client_addr_len = sizeof(clientaddr);
@@ -83,21 +83,21 @@ int main(){
             // 轮询
             for(int i = 1; i <= nfds; ++i){
                 // if(FD_ISSET(i, &tmp)){
-                if(fd[i].revents & POOLIN){
+                if(fds[i].revents & POLLIN){
                     // fd=i的客户端发来了数据
                     char recvBuf[1024] = {0};
-                    int len = read(fd[i].fd, &recvBuf, sizeof(recvBuf));
+                    int len = read(fds[i].fd, &recvBuf, sizeof(recvBuf));
                     if(len == -1){
                         perror("read");
                         exit(-1);
                     }
                     else if(len > 0){
                         printf("recv client data: %s \n", recvBuf);
-                        write(fd[i].fd, recvBuf, strlen(recvBuf)+1);
+                        write(fds[i].fd, recvBuf, strlen(recvBuf)+1);
                     }
                     else if(len == 0){
                         printf("client closed...\n");
-                        close(fd[i].fd);
+                        close(fds[i].fd);
                         // FD_CLR(i, &rdset);
                         // 减小nfds的长度
                         if(i == nfds){
@@ -108,8 +108,9 @@ int main(){
                                 }
                             }
                         }
-                        fd[i].fd = -1;
+                        fds[i].fd = -1;
                         // 是否需要清空fd[i].revent ?
+                        // 不需要清空。因为再每次调用poll函数的时候revents都会重置。我看评论好像有人说是fd=-1的revents = 0
                     }
 
 
