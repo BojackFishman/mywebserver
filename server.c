@@ -34,10 +34,13 @@ int main(){
         exit(-1);
     }
 
+    // listen
+    listen(httpd, 5);
+
     // 创建一个fd_set的集合，存放要检测的文件描述符
     fd_set rdset, tmp;
     FD_ZERO(&rdset);
-    FD_SET(httpd, rdset);
+    FD_SET(httpd, &rdset);
     int maxfd = httpd;
 
 
@@ -64,7 +67,7 @@ int main(){
                 maxfd = maxfd > clientfd ? maxfd : clientfd;
             }
             // 轮询
-            for(int i = httpd + 1; i < maxfd; ++i){
+            for(int i = httpd + 1; i <= maxfd; ++i){
                 if(FD_ISSET(i, &tmp)){
                     // fd=i的客户端发来了数据
                     char recvBuf[1024] = {0};
